@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reverse My Voice</title>
+<style>
+  :root { color-scheme: dark; --bg:#10111a; --panel:#1b1d2b; --text:#f5f5fb; --muted:#a9abc0; --accent:#a78bfa; --accent2:#7c3aed; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px; background:radial-gradient(circle at top, #292044, var(--bg) 58%); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,sans-serif; }
+  main { width:min(100%,520px); padding:clamp(24px,6vw,40px); border:1px solid #ffffff18; border-radius:28px; background:#1b1d2beF; box-shadow:0 24px 80px #0006; text-align:center; }
+  .logo { width:68px;height:68px;margin:0 auto 18px;border-radius:22px;display:grid;place-items:center;background:#a78bfa20;color:var(--accent);font-size:32px; }
+  h1 { margin:0; font-size:clamp(28px,6vw,38px); letter-spacing:-1px; }
+  .intro { color:var(--muted); line-height:1.55; margin:12px 0 26px; }
+  .meter { height:74px; display:flex; align-items:center; justify-content:center; gap:4px; margin:8px 0 24px; }
+  .bar { width:5px; border-radius:8px; height:12px; background:#8b5cf6; opacity:.8; }
+  .meter.active .bar { animation:pulse .7s ease-in-out infinite alternate; }
+  .bar:nth-child(3n) { animation-delay:.15s; }.bar:nth-child(4n) { animation-delay:.3s; }.bar:nth-child(5n) { animation-delay:.45s; }
+  @keyframes pulse { from{height:10px;opacity:.45} to{height:58px;opacity:1} }
+  .status { color:var(--muted); font-size:14px; min-height:22px; margin-bottom:18px; }
+  .controls { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  button { border:0; border-radius:14px; padding:14px 12px; font:600 15px system-ui; cursor:pointer; color:var(--text); background:#303247; transition:transform .15s,opacity .15s; }
+  button:hover:not(:disabled) { transform:translateY(-1px); }
+  button:disabled { opacity:.38; cursor:not-allowed; }
+  .primary { background:linear-gradient(135deg,var(--accent),var(--accent2)); color:white; }
+  .record { background:#3b2436; color:#ffb8d0; }
+  .record.recording { background:#8b2345; color:white; }
+  .wide { grid-column:1 / -1; }
+  audio { width:100%; margin-top:20px; display:none; }
+  .note { margin-top:24px; font-size:12px; color:#898ba3; line-height:1.5; }
+  .download { display:none; margin-top:12px; color:#c4b5fd; text-decoration:none; font-size:14px; }
+  .download:hover { text-decoration:underline; }
+</style>
+</head>
+<body>
+<main>
+  <div class="logo" aria-hidden="true">↶</div>
+  <h1>Reverse My Voice</h1>
+  <p class="intro">Record a short voice clip, flip it backwards, and hear how wonderfully weird it sounds.</p>
+  <div class="meter" id="meter" aria-hidden="true"></div>
+  <div class="status" id="status" role="status" aria-live="polite">Ready when you are.</div>
+  <div class="controls">
+    <button id="recordBtn" class="record">● Start recording</button>
+    <button id="stopBtn" disabled>■ Stop recording</button>
+    <button id="reverseBtn" class="primary wide" disabled>↶ Reverse my audio</button>
+    <button id="playBtn" disabled>▶ Play reversed</button>
+    <button id="normalBtn" disabled>▶ Play original</button>
+  </div>
+  <audio id="player" controls></audio>
+  <a class="download" id="download" download="reversed-voice.wav">↓ Download reversed audio</a>
+  <p class="note">Your recording is processed locally in your browser. Allow microphone access when prompted. Nothing is uploaded.</p>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const meter = $('meter');
+for (let i=0;i<31;i++) { const b=document.createElement('span'); b.className='bar'; b.style.height=(10+(i*17%28))+'px'; meter.appendChild(b); }
+let recorder, chunks=[], originalBuffer=null, reversedBuffer=null, audioContext=null, originalUrl=null, reversedUrl=null;
+const status = msg => $('status').textContent=msg;
+function setRecording(on) {
+  $('recordBtn').classList.toggle('recording',on);
+  $('recordBtn').textContent=on?'● Recording…':'● Start recording';
+  $('stopBtn').disabled=!on; $('recordBtn').disabled=on;
+  meter.classList.toggle('active',on);
+}
+$('recordBtn').addEventListener('click', async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    chunks=[];
+    const options = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? {mimeType:'audio/webm;codecs=opus'} : {};
+    recorder = new MediaRecorder(stream, options);
+    recorder.ondataavailable = e => { if(e.data.size) chunks.push(e.data); };
+    recorder.onstop = async () => {
+      stream.getTracks().forEach(t=>t.stop());
+      try {
+        const blob = new Blob(chunks,{type:recorder.mimeType || 'audio/webm'});
+        const bytes = await blob.arrayBuffer();
+        audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
+        originalBuffer = await audioContext.decodeAudioData(bytes);
+        reversedBuffer = null;
+        $('reverseBtn').disabled=false; $('playBtn').disabled=true; $('normalBtn').disabled=false;
+        $('player').style.display='none'; $('download').style.display='none';
+        status('Recording captured! Tap “Reverse my audio”.');
+      } catch(e) { status('Could not read that recording. Please try recording again.'); }
+    };
+    recorder.start(); setRecording(true); status('Listening… speak clearly, then stop.');
+  } catch(e) {
+    status(e.name==='NotAllowedError'?'Microphone permission was denied. Allow it in your browser settings.':'Could not access the microphone. Try using this page on HTTPS or localhost.');
+  }
+});
+$('stopBtn').addEventListener('click',()=>{ if(recorder && recorder.state!=='inactive'){setRecording(false);recorder.stop();status('Preparing your recording…');} });
+function reverseBuffer(buf) {
+  const out = audioContext.createBuffer(buf.numberOfChannels,buf.length,buf.sampleRate);
+  for(let ch=0;ch<buf.numberOfChannels;ch++){
+    const src=buf.getChannelData(ch), dst=out.getChannelData(ch);
+    for(let i=0,j=src.length-1;i<src.length;i++,j--) dst[i]=src[j];
+  }
+  return out;
+}
+function wavBlob(buffer) {
+  const channels=buffer.numberOfChannels, rate=buffer.sampleRate, frames=buffer.length;
+  const dataSize=frames*channels*2, ab=new ArrayBuffer(44+dataSize), v=new DataView(ab);
+  const write=(offset,str)=>{for(let i=0;i<str.length;i++)v.setUint8(offset+i,str.charCodeAt(i));};
+  write(0,'RIFF');v.setUint32(4,36+dataSize,true);write(8,'WAVE');write(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,channels,true);v.setUint32(24,rate,true);v.setUint32(28,rate*channels*2,true);v.setUint16(32,channels*2,true);v.setUint16(34,16,true);write(36,'data');v.setUint32(40,dataSize,true);
+  let offset=44;
+  for(let i=0;i<frames;i++) for(let ch=0;ch<channels;ch++){
+    let s=Math.max(-1,Math.min(1,buffer.getChannelData(ch)[i]));
+    v.setInt16(offset,s<0?s*32768:s*32767,true);offset+=2;
+  }
+  return new Blob([ab],{type:'audio/wav'});
+}
+function playBuffer(buffer) {
+  if(!buffer)return;
+  const src=audioContext.createBufferSource();src.buffer=buffer;src.connect(audioContext.destination);src.start();
+}
+$('reverseBtn').addEventListener('click',()=>{
+  if(!originalBuffer)return;
+  reversedBuffer=reverseBuffer(originalBuffer);
+  const blob=wavBlob(reversedBuffer);
+  if(reversedUrl)URL.revokeObjectURL(reversedUrl);
+  reversedUrl=URL.createObjectURL(blob);
+  $('player').src=reversedUrl;$('player').style.display='block';$('player').load();
+  $('download').href=reversedUrl;$('download').style.display='inline-block';
+  $('playBtn').disabled=false;status('Reversed! Play it back or download the WAV file.');
+});
+$('playBtn').addEventListener('click',()=>{if(reversedBuffer){audioContext.resume();playBuffer(reversedBuffer);status('Playing reversed audio…');}});
+$('normalBtn').addEventListener('click',()=>{if(originalBuffer){audioContext.resume();playBuffer(originalBuffer);status('Playing original audio…');}});
+</script>
+</body>
+</html>
